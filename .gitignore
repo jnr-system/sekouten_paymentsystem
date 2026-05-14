@@ -1,0 +1,8 @@
+.env
+google_secret.json
+db/contractor.db
+output/
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store

@@ -1,0 +1,11 @@
+[Unit]
+Description=Contractor Sync Script
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/root/project/sekouten_paymentsystem
+ExecStart=/usr/bin/python3 sync/sync_contractor.py
+EnvironmentFile=/root/project/sekouten_paymentsystem/.env
+StandardOutput=journal
+StandardError=journal

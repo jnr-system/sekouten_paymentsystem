@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>支払通知書発行システム</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f5f7fa; color: #222; font-size: 14px; }
+header { background: #1a3a5c; color: #fff; padding: 16px 24px; display: flex; align-items: center; gap: 24px; }
+header h1 { font-size: 18px; font-weight: 700; }
+header label { font-size: 13px; color: #cbd5e1; }
+header select { margin-left: 8px; padding: 4px 8px; border-radius: 4px; border: none; font-size: 14px; }
+.container { max-width: 960px; margin: 24px auto; padding: 0 16px; }
+.toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
+button { cursor: pointer; border: none; border-radius: 4px; padding: 8px 16px; font-size: 13px; font-family: inherit; }
+.btn-outline { background: #fff; border: 1px solid #94a3b8; color: #334155; }
+.btn-outline:hover { background: #f1f5f9; }
+.btn-primary { background: #2563eb; color: #fff; font-weight: 600; font-size: 15px; padding: 10px 28px; }
+.btn-primary:hover:not(:disabled) { background: #1d4ed8; }
+.btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
+.btn-danger { background: #dc2626; color: #fff; }
+.btn-danger:hover { background: #b91c1c; }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+#error-msg { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; border-radius: 6px; padding: 10px 14px; margin-bottom: 12px; display: none; }
+table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+thead th { background: #1a3a5c; color: #fff; padding: 10px 14px; text-align: left; font-weight: 600; font-size: 13px; }
+tbody tr.contractor-row { border-bottom: 1px solid #e2e8f0; }
+tbody tr.contractor-row:nth-child(4n+3) td { background: #f8fafc; }
+tbody tr.contractor-row:hover td { background: #eff6ff; }
+td { padding: 10px 14px; vertical-align: middle; }
+.badge { display: inline-block; background: #fef3c7; color: #92400e; border: 1px solid #fde68a; border-radius: 4px; padding: 1px 6px; font-size: 11px; margin-left: 6px; }
+.detail-toggle { background: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe; border-radius: 4px; padding: 3px 10px; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.detail-toggle:hover { background: #c7d2fe; }
+tr.detail-row td { padding: 0; background: #f8fafc !important; }
+.detail-inner { padding: 8px 24px 12px 40px; }
+.detail-table { width: 100%; border-collapse: collapse; }
+.detail-table tr { border-bottom: 1px solid #e2e8f0; }
+.detail-table tr:last-child { border-bottom: none; }
+.detail-table td { padding: 7px 10px; font-size: 13px; }
+.detail-table tr.excluded-row td { text-decoration: line-through; color: #94a3b8; }
+.amount { text-align: right; font-variant-numeric: tabular-nums; }
+.summary-bar { margin-top: 20px; display: flex; align-items: center; justify-content: space-between; background: #fff; border-radius: 8px; padding: 14px 20px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+.summary-text { font-size: 15px; font-weight: 600; color: #1a3a5c; }
+#result-section { margin-top: 20px; background: #fff; border-radius: 8px; padding: 16px 20px; box-shadow: 0 1px 4px rgba(0,0,0,.08); display: none; }
+#result-section h2 { font-size: 15px; font-weight: 700; margin-bottom: 10px; color: #1a3a5c; }
+.result-item { padding: 6px 0; border-bottom: 1px solid #f1f5f9; display: flex; gap: 10px; align-items: center; font-size: 13px; }
+.result-item:last-child { border-bottom: none; }
+.ok { color: #16a34a; font-weight: 700; }
+.ng { color: #dc2626; font-weight: 700; }
+.spinner { display: inline-block; width: 18px; height: 18px; border: 3px solid #fff; border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; margin-right: 8px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+/* Modal */
+#modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 1000; }
+#modal-overlay.active { display: flex; }
+.modal { background: #fff; border-radius: 10px; padding: 28px 28px 22px; width: 380px; box-shadow: 0 8px 32px rgba(0,0,0,.18); }
+.modal h2 { font-size: 16px; font-weight: 700; margin-bottom: 16px; color: #1a3a5c; }
+.modal label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; color: #475569; }
+.modal select, .modal textarea { width: 100%; border: 1px solid #cbd5e1; border-radius: 5px; padding: 7px 10px; font-size: 13px; font-family: inherit; margin-bottom: 14px; }
+.modal textarea { resize: vertical; height: 72px; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+</style>
+</head>
+<body>
+<header>
+  <h1>支払通知書発行システム</h1>
+  <div>
+    <label>対象月: <select id="month-select"></select></label>
+  </div>
+</header>
+
+<div class="container">
+  <div id="error-msg"></div>
+  <div class="toolbar">
+    <button class="btn-outline" onclick="selectAll(true)">全選択</button>
+    <button class="btn-outline" onclick="selectAll(false)">全解除</button>
+  </div>
+  <table id="main-table">
+    <thead>
+      <tr>
+        <th style="width:36px"></th>
+        <th>施工店名</th>
+        <th style="width:80px;text-align:center">件数</th>
+        <th style="width:130px;text-align:right">合計金額（税込）</th>
+        <th style="width:90px"></th>
+      </tr>
+    </thead>
+    <tbody id="contractor-body"></tbody>
+  </table>
+
+  <div class="summary-bar">
+    <span class="summary-text" id="summary-text">選択中: 0社 / 合計: ¥0</span>
+    <button class="btn-primary" id="issue-btn" onclick="issueNotices()">支払通知書を発行</button>
+  </div>
+
+  <div id="result-section">
+    <h2>発行結果</h2>
+    <div id="result-list"></div>
+  </div>
+</div>
+
+<!-- 除外理由モーダル -->
+<div id="modal-overlay">
+  <div class="modal">
+    <h2>案件除外 - 理由を選択</h2>
+    <label>除外理由</label>
+    <select id="modal-reason">
+      <option value="carry_over">来月持ち越し</option>
+      <option value="checking">確認中</option>
+      <option value="not_billed">請求不要</option>
+    </select>
+    <label>メモ（任意）</label>
+    <textarea id="modal-memo" placeholder="メモを入力..."></textarea>
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="cancelExclude()">キャンセル</button>
+      <button class="btn-danger" onclick="confirmExclude()">除外する</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '';
+let currentMonth = '';
+let contractors = [];
+let contractorChecked = {};
+let caseData = {};
+let caseChecked = {};
+let pendingExclude = null;
+
+function fmt(n) {
+  return '¥' + Number(n).toLocaleString('ja-JP');
+}
+
+function showError(msg) {
+  const el = document.getElementById('error-msg');
+  el.textContent = msg;
+  el.style.display = msg ? 'block' : 'none';
+}
+
+function buildMonthOptions() {
+  const sel = document.getElementById('month-select');
+  const now = new Date();
+  now.setDate(1);
+  now.setMonth(now.getMonth() - 1);
+  const options = [];
+  for (let i = 0; i < 12; i++) {
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const val = `${y}-${m}`;
+    options.push(val);
+    now.setMonth(now.getMonth() - 1);
+  }
+  options.forEach((v, i) => {
+    const opt = document.createElement('option');
+    opt.value = v;
+    opt.textContent = v;
+    if (i === 0) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  currentMonth = options[0];
+  sel.addEventListener('change', () => {
+    currentMonth = sel.value;
+    loadContractors();
+  });
+}
+
+async function loadContractors() {
+  showError('');
+  const tbody = document.getElementById('contractor-body');
+  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:#64748b">読み込み中...</td></tr>';
+  try {
+    const res = await fetch(`${API}/api/contractors?month=${currentMonth}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    contractors = await res.json();
+    caseData = {};
+    caseChecked = {};
+    contractorChecked = {};
+    contractors.forEach(c => { contractorChecked[c.contractor_id] = true; });
+    renderContractors();
+  } catch (e) {
+    showError('施工店一覧の取得に失敗しました: ' + e.message);
+    tbody.innerHTML = '';
+  }
+}
+
+function renderContractors() {
+  const tbody = document.getElementById('contractor-body');
+  tbody.innerHTML = '';
+  contractors.forEach(c => {
+    const row = document.createElement('tr');
+    row.className = 'contractor-row';
+    row.dataset.id = c.contractor_id;
+    const checked = contractorChecked[c.contractor_id];
+    row.innerHTML = `
+      <td><input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleContractor('${c.contractor_id}', this.checked)"></td>
+      <td>${escHtml(c.name)}${c.carried_over ? '<span class="badge">⚠ 持ち越し</span>' : ''}</td>
+      <td style="text-align:center">${c.case_count}件</td>
+      <td class="amount" id="amt-${c.contractor_id}">${fmt(c.total_amount)}</td>
+      <td><button class="detail-toggle" onclick="toggleDetail('${c.contractor_id}', this)">明細 ▼</button></td>
+    `;
+    tbody.appendChild(row);
+    const detailRow = document.createElement('tr');
+    detailRow.className = 'detail-row';
+    detailRow.id = `detail-${c.contractor_id}`;
+    detailRow.style.display = 'none';
+    detailRow.innerHTML = '<td colspan="5"><div class="detail-inner" id="detail-inner-' + c.contractor_id + '">読み込み中...</div></td>';
+    tbody.appendChild(detailRow);
+  });
+  updateSummary();
+}
+
+async function toggleDetail(id, btn) {
+  const row = document.getElementById(`detail-${id}`);
+  if (row.style.display !== 'none') {
+    row.style.display = 'none';
+    btn.textContent = '明細 ▼';
+    return;
+  }
+  row.style.display = '';
+  btn.textContent = '明細 ▲';
+  if (!caseData[id]) {
+    await loadCases(id);
+  }
+  renderCases(id);
+}
+
+async function loadCases(id) {
+  try {
+    const res = await fetch(`${API}/api/contractors/${id}/cases?month=${currentMonth}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const cases = await res.json();
+    caseData[id] = cases;
+    cases.forEach(c => {
+      if (!(c.case_id in caseChecked)) {
+        caseChecked[c.case_id] = !c.excluded;
+      }
+    });
+  } catch (e) {
+    document.getElementById(`detail-inner-${id}`).textContent = '取得失敗: ' + e.message;
+  }
+}
+
+function renderCases(contractorId) {
+  const inner = document.getElementById(`detail-inner-${contractorId}`);
+  const cases = caseData[contractorId];
+  if (!cases || cases.length === 0) {
+    inner.textContent = '案件なし';
+    return;
+  }
+  let html = '<table class="detail-table">';
+  cases.forEach(c => {
+    const chk = caseChecked[c.case_id];
+    const excluded = !chk;
+    html += `<tr class="${excluded ? 'excluded-row' : ''}" id="case-row-${c.case_id}">
+      <td style="width:32px"><input type="checkbox" ${chk ? 'checked' : ''} onchange="toggleCase('${contractorId}','${c.case_id}',this)"></td>
+      <td>${escHtml(c.case_name)}${c.carried_over ? '<span class="badge">⚠ 持ち越し</span>' : ''}</td>
+      <td style="width:100px;color:#64748b">${c.construction_date || ''}</td>
+      <td class="amount" style="width:110px">${fmt(c.amount_with_tax)}</td>
+    </tr>`;
+  });
+  html += '</table>';
+  inner.innerHTML = html;
+}
+
+function toggleContractor(id, checked) {
+  contractorChecked[id] = checked;
+  updateSummary();
+}
+
+function toggleCase(contractorId, caseId, checkbox) {
+  if (!checkbox.checked) {
+    pendingExclude = { contractorId, caseId, checkbox };
+    document.getElementById('modal-reason').value = 'carry_over';
+    document.getElementById('modal-memo').value = '';
+    document.getElementById('modal-overlay').classList.add('active');
+  } else {
+    caseChecked[caseId] = true;
+    updateCaseRow(caseId, true);
+    recalcContractorAmount(contractorId);
+    updateSummary();
+  }
+}
+
+function cancelExclude() {
+  if (pendingExclude) {
+    pendingExclude.checkbox.checked = true;
+    pendingExclude = null;
+  }
+  document.getElementById('modal-overlay').classList.remove('active');
+}
+
+async function confirmExclude() {
+  if (!pendingExclude) return;
+  const { contractorId, caseId, checkbox } = pendingExclude;
+  const reason = document.getElementById('modal-reason').value;
+  const memo = document.getElementById('modal-memo').value;
+  document.getElementById('modal-overlay').classList.remove('active');
+  try {
+    const res = await fetch(`${API}/api/cases/${caseId}/exclude`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason, memo })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    caseChecked[caseId] = false;
+    updateCaseRow(caseId, false);
+    recalcContractorAmount(contractorId);
+    updateSummary();
+  } catch (e) {
+    showError('除外登録に失敗しました: ' + e.message);
+    checkbox.checked = true;
+  }
+  pendingExclude = null;
+}
+
+function updateCaseRow(caseId, checked) {
+  const row = document.getElementById(`case-row-${caseId}`);
+  if (row) row.className = checked ? '' : 'excluded-row';
+}
+
+function recalcContractorAmount(contractorId) {
+  const cases = caseData[contractorId];
+  if (!cases) return;
+  const total = cases.reduce((sum, c) => sum + (caseChecked[c.case_id] ? c.amount_with_tax : 0), 0);
+  const el = document.getElementById(`amt-${contractorId}`);
+  if (el) el.textContent = fmt(total);
+  const c = contractors.find(x => x.contractor_id === contractorId);
+  if (c) c._displayTotal = total;
+}
+
+function getContractorTotal(c) {
+  if (caseData[c.contractor_id]) {
+    return caseData[c.contractor_id].reduce((sum, cas) => sum + (caseChecked[cas.case_id] ? cas.amount_with_tax : 0), 0);
+  }
+  return c.total_amount;
+}
+
+function updateSummary() {
+  let count = 0, total = 0;
+  contractors.forEach(c => {
+    if (contractorChecked[c.contractor_id]) {
+      count++;
+      total += getContractorTotal(c);
+    }
+  });
+  document.getElementById('summary-text').textContent = `選択中: ${count}社 / 合計: ${fmt(total)}`;
+}
+
+function selectAll(checked) {
+  contractors.forEach(c => {
+    contractorChecked[c.contractor_id] = checked;
+    const cb = document.querySelector(`tr[data-id="${c.contractor_id}"] input[type=checkbox]`);
+    if (cb) cb.checked = checked;
+  });
+  updateSummary();
+}
+
+async function issueNotices() {
+  const selectedIds = contractors.filter(c => contractorChecked[c.contractor_id]).map(c => c.contractor_id);
+  if (selectedIds.length === 0) { alert('施工店を選択してください。'); return; }
+  const excludedCaseIds = Object.entries(caseChecked).filter(([, v]) => !v).map(([k]) => k);
+  const btn = document.getElementById('issue-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>発行中...';
+  showError('');
+  document.getElementById('result-section').style.display = 'none';
+  try {
+    const res = await fetch(`${API}/api/notices/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contractor_ids: selectedIds, excluded_case_ids: excludedCaseIds, month: currentMonth })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    renderResult(data);
+  } catch (e) {
+    showError('発行に失敗しました: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '支払通知書を発行';
+  }
+}
+
+function renderResult(data) {
+  const sec = document.getElementById('result-section');
+  const list = document.getElementById('result-list');
+  const results = Array.isArray(data) ? data : (data.results || []);
+  list.innerHTML = results.map(r =>
+    `<div class="result-item"><span class="${r.success ? 'ok' : 'ng'}">${r.success ? '✓' : '✗'}</span><span>${escHtml(r.contractor_name || r.contractor_id)}</span>${r.message ? `<span style="color:#64748b">${escHtml(r.message)}</span>` : ''}</div>`
+  ).join('') || '<div class="result-item">結果なし</div>';
+  sec.style.display = 'block';
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+buildMonthOptions();
+loadContractors();
+</script>
+</body>
+</html>
