@@ -45,7 +45,8 @@ def generate_notices(body: GenerateBody):
             if c["contractor_id"] == contractor_id and c["case_id"] not in excluded_set
         ]
 
-        output_dir = os.path.join("output", body.month)
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        output_dir = os.path.join(base_dir, "output", body.month)
         os.makedirs(output_dir, exist_ok=True)
         output_path = os.path.join(output_dir, f"{contractor_id}.pdf")
 
@@ -79,7 +80,8 @@ def get_notice_pdf(notice_id: str):
     if len(parts) != 2:
         raise HTTPException(status_code=400, detail="不正なnotice_id形式")
     month, contractor_id = parts
-    pdf_path = os.path.join("output", month, f"{contractor_id}.pdf")
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    pdf_path = os.path.join(base_dir, "output", month, f"{contractor_id}.pdf")
     if not os.path.exists(pdf_path):
         raise HTTPException(status_code=404, detail="PDFが見つかりません")
     return FileResponse(pdf_path, media_type="application/pdf", filename=f"{contractor_id}.pdf")

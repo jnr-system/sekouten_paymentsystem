@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DB_PATH = os.environ["SQLITE_DB_PATH"]
+DB_PATH = os.environ.get("SQLITE_DB_PATH", os.path.join(os.path.dirname(__file__), "..", "db", "contractor.db"))
 
 DDL = """
 CREATE TABLE IF NOT EXISTS contractor_basic (
@@ -92,6 +92,18 @@ def get_contractor(contractor_id: str) -> dict:
         return dict(row) if row else {}
 
 
+def get_contractor_by_name(name: str) -> dict:
+    sql = """
+        SELECT b.contractor_id
+        FROM contractor_basic b
+        WHERE b.name = ?
+        LIMIT 1
+    """
+    with _connect() as conn:
+        row = conn.execute(sql, (name,)).fetchone()
+        return dict(row) if row else {}
+
+
 def get_all_contractors() -> list[dict]:
     sql = """
         SELECT
@@ -114,15 +126,22 @@ def get_excluded_cases(month: str) -> list[dict]:
         return [dict(r) for r in conn.execute(sql, (month,)).fetchall()]
 
 
-def upsert_excluded_case(case: dict) -> None:
+def upsert_excluded_case(
+    case_id: str,
+    contractor_id: str,
+    reason: str,
+    memo: str = "",
+    target_month: str = "",
+    carry_to_month: str = None,
+) -> None:
     sql = """
         INSERT INTO excluded_cases
             (case_id, contractor_id, exclude_reason, memo, target_month, carry_to_month)
         VALUES
-            (:case_id, :contractor_id, :exclude_reason, :memo, :target_month, :carry_to_month)
+            (?, ?, ?, ?, ?, ?)
     """
     with _connect() as conn:
-        conn.execute(sql, case)
+        conn.execute(sql, (case_id, contractor_id, reason, memo, target_month, carry_to_month))
 
 
 def upsert_contractor_basic(row: dict) -> None:

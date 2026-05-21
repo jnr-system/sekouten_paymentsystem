@@ -43,9 +43,12 @@ def sync_basic_rows() -> int:
     upserted = 0
     for raw in rows:
         row = _pad(raw, 8)
-        # A=施工店ID, B=施工店名, C=郵便番号, D=住所, E=電話番号, F=FAX番号, G=契約状態, H=メールアドレス
+        # A=施工店ID, B=施工店名, C=取引状況, D=代表者名, E=電話①, F=郵便番号, G=住所, H=インボイス番号
         contractor_id = row[0].strip()
         if not contractor_id:
+            continue
+        status = row[2].strip()
+        if status != "継続中":
             continue
         new_hash = compute_row_hash(row)
         existing = db.get_contractor(contractor_id)
@@ -54,42 +57,28 @@ def sync_basic_rows() -> int:
         db.upsert_contractor_basic({
             "contractor_id": contractor_id,
             "name":          row[1],
-            "postal_code":   row[2],
-            "address":       row[3],
+            "status":        row[2] or "継続中",
             "phone":         row[4],
-            "fax":           row[5],
-            "status":        row[6] or "継続中",
-            "email":         row[7],
+            "postal_code":   row[5],
+            "address":       row[6],
+            "fax":           "",
+            "email":         "",
             "line_user_id":  existing.get("line_user_id"),
             "send_method":   existing.get("send_method", "email"),
             "rakuraku_id":   existing.get("rakuraku_id"),
             "row_hash":      new_hash,
-            "synced_at":     None,  # 差分があるので未同期に戻す
+            "synced_at":     None,
         })
-        upserted += 1
-    return upserted
-
-
-def sync_invoice_rows() -> int:
-    rows = sheets_client.get_invoice_rows()
-    upserted = 0
-    for raw in rows:
-        row = _pad(raw, 3)
-        # A=施工店ID, B=インボイス登録番号, C=登録日
-        contractor_id = row[0].strip()
-        if not contractor_id:
-            continue
-        new_hash = compute_row_hash(row)
-        existing = db.get_contractor(contractor_id)
-        if existing.get("row_hash") == new_hash:
-            continue
-        db.upsert_contractor_invoice({
-            "contractor_id":   contractor_id,
-            "invoice_number":  row[1],
-            "registered_date": row[2] or None,
-            "row_hash":        new_hash,
-            "synced_at":       None,
-        })
+        # インボイス番号も同じ行から取得してinvoiceテーブルへ
+        invoice_number = row[7].strip()
+        if invoice_number:
+            db.upsert_contractor_invoice({
+                "contractor_id":   contractor_id,
+                "invoice_number":  invoice_number,
+                "registered_date": None,
+                "row_hash":        new_hash,
+                "synced_at":       None,
+            })
         upserted += 1
     return upserted
 
@@ -98,10 +87,12 @@ def sync_bank_rows() -> int:
     rows = sheets_client.get_bank_rows()
     upserted = 0
     for raw in rows:
-        row = _pad(raw, 6)
-        # A=施工店ID, B=銀行名, C=支店名, D=口座種別, E=口座番号, F=口座名義
+        row = _pad(raw, 8)
+        # A=施工店ID, B=奉行コード, C=銀行名, D=支店名, E=預金種別, F=口座番号, G=施工店名, H=口座名
         contractor_id = row[0].strip()
         if not contractor_id:
+            continue
+        if not row[2].strip():
             continue
         new_hash = compute_row_hash(row)
         existing = db.get_contractor(contractor_id)
@@ -109,11 +100,11 @@ def sync_bank_rows() -> int:
             continue
         db.upsert_contractor_bank({
             "contractor_id":  contractor_id,
-            "bank_name":      row[1],
-            "branch_name":    row[2],
-            "account_type":   row[3],
-            "account_number": row[4],
-            "account_holder": row[5],
+            "bank_name":      row[2],
+            "branch_name":    row[3],
+            "account_type":   row[4],
+            "account_number": row[5],
+            "account_holder": row[7],
             "row_hash":       new_hash,
             "synced_at":      None,
         })
@@ -162,21 +153,15 @@ def main() -> None:
     # 1. Google Sheetsから取得してSQLiteへ差分Upsert
     try:
         b = sync_basic_rows()
-        logger.info(f"基本情報 upsert: {b} 件")
+        logger.info(f"基本情報（インボイス含む） upsert: {b} 件")
     except Exception as e:
         logger.error(f"基本情報シート取得失敗: {e}")
 
     try:
-        i = sync_invoice_rows()
-        logger.info(f"インボイス upsert: {i} 件")
-    except Exception as e:
-        logger.error(f"インボイスシート取得失敗: {e}")
-
-    try:
         k = sync_bank_rows()
-        logger.info(f"振込先 upsert: {k} 件")
+        logger.info(f"口座情報 upsert: {k} 件")
     except Exception as e:
-        logger.error(f"振込先シート取得失敗: {e}")
+        logger.error(f"口座情報シート取得失敗: {e}")
 
     # 2. 未同期レコードを楽楽販売APIへ反映
     ok, ng = sync_to_rakuraku()

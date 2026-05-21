@@ -52,14 +52,17 @@ def list_cases(contractor_id: str, month: str):
         ex = excluded_map.get(c["case_id"])
         cases.append({
             "case_id": c["case_id"],
+            "arrangement_number": c.get("arrangement_number", ""),
             "case_name": c.get("case_name", ""),
+            "case_name_recipient": c.get("case_name_recipient") or "",
             "construction_date": c.get("construction_date", ""),
             "amount": c.get("amount", 0),
             "tax": c.get("tax", 0),
             "amount_with_tax": c.get("amount_with_tax", 0),
             "excluded": ex is not None,
-            "carried_over": ex["reason"] == "carry_over" if ex else False,
+            "carried_over": ex["exclude_reason"] == "carry_over" if ex else False,
         })
+    cases.sort(key=lambda c: c["construction_date"] or "")
     return cases
 
 

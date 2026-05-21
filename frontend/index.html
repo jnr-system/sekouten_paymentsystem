@@ -33,11 +33,20 @@ td { padding: 10px 14px; vertical-align: middle; }
 .detail-toggle { background: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe; border-radius: 4px; padding: 3px 10px; font-size: 12px; cursor: pointer; white-space: nowrap; }
 .detail-toggle:hover { background: #c7d2fe; }
 tr.detail-row td { padding: 0; background: #f8fafc !important; }
-.detail-inner { padding: 8px 24px 12px 40px; }
-.detail-table { width: 100%; border-collapse: collapse; }
-.detail-table tr { border-bottom: 1px solid #e2e8f0; }
-.detail-table tr:last-child { border-bottom: none; }
-.detail-table td { padding: 7px 10px; font-size: 13px; }
+.detail-inner { padding: 10px 20px 16px 32px; }
+.detail-table { width: 100%; border-collapse: collapse; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; table-layout: fixed; }
+.detail-table thead tr { background: #334155; }
+.detail-table thead th { padding: 9px 16px; font-size: 13px; font-weight: 600; color: #fff; text-align: left; border-right: 1px solid #475569; }
+.detail-table thead th:first-child { padding: 9px 8px; }
+.detail-table thead th:last-child { border-right: none; }
+.detail-table tbody tr { border-bottom: 1px solid #e2e8f0; }
+.detail-table tbody tr:last-child { border-bottom: none; }
+.detail-table tbody tr:nth-child(even) td { background: #f8fafc; }
+.detail-table tbody tr:hover td { background: #eff6ff; }
+.detail-table td { padding: 9px 16px; font-size: 14px; border-right: 1px solid #e2e8f0; vertical-align: middle; }
+.detail-table td:nth-child(2), .detail-table td:nth-child(3) { padding-left: 10px; padding-right: 10px; }
+.detail-table td:first-child { padding: 9px 8px; text-align: center; }
+.detail-table td:last-child { border-right: none; }
 .detail-table tr.excluded-row td { text-decoration: line-through; color: #94a3b8; }
 .amount { text-align: right; font-variant-numeric: tabular-nums; }
 .summary-bar { margin-top: 20px; display: flex; align-items: center; justify-content: space-between; background: #fff; border-radius: 8px; padding: 14px 20px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
@@ -141,7 +150,6 @@ function buildMonthOptions() {
   const sel = document.getElementById('month-select');
   const now = new Date();
   now.setDate(1);
-  now.setMonth(now.getMonth() - 1);
   const options = [];
   for (let i = 0; i < 12; i++) {
     const y = now.getFullYear();
@@ -247,17 +255,20 @@ function renderCases(contractorId) {
     inner.textContent = '案件なし';
     return;
   }
-  let html = '<table class="detail-table">';
-  cases.forEach(c => {
+    const sortedCases = [...cases].sort((a, b) => (a.construction_date || '').localeCompare(b.construction_date || ''));
+  let html = '<table class="detail-table"><thead><tr><th style="width:40px"></th><th style="width:140px;text-align:center">手配番号</th><th>工事内容</th><th style="width:120px;text-align:center">施工日</th><th style="width:130px;text-align:right">施工費（税込）</th></tr></thead><tbody>';
+  sortedCases.forEach(c => {
     const chk = caseChecked[c.case_id];
     const excluded = !chk;
     html += `<tr class="${excluded ? 'excluded-row' : ''}" id="case-row-${c.case_id}">
-      <td style="width:32px"><input type="checkbox" ${chk ? 'checked' : ''} onchange="toggleCase('${contractorId}','${c.case_id}',this)"></td>
-      <td>${escHtml(c.case_name)}${c.carried_over ? '<span class="badge">⚠ 持ち越し</span>' : ''}</td>
-      <td style="width:100px;color:#64748b">${c.construction_date || ''}</td>
-      <td class="amount" style="width:110px">${fmt(c.amount_with_tax)}</td>
+      <td><input type="checkbox" ${chk ? 'checked' : ''} onchange="toggleCase('${contractorId}','${c.case_id}',this)"></td>
+      <td style="color:#475569;text-align:left">${escHtml(c.arrangement_number || '')}</td>
+      <td>${escHtml((c.case_name_recipient ? c.case_name_recipient + ' 様　' : '') + c.case_name.replace(/^・/, '').split('\t')[0] + 'の交換工事')}${c.carried_over ? '<span class="badge">⚠ 持ち越し</span>' : ''}</td>
+      <td style="color:#475569;text-align:center">${c.construction_date || ''}</td>
+      <td class="amount">${fmt(c.amount_with_tax)}</td>
     </tr>`;
   });
+  html += '</tbody>';
   html += '</table>';
   inner.innerHTML = html;
 }
@@ -299,7 +310,7 @@ async function confirmExclude() {
     const res = await fetch(`${API}/api/cases/${caseId}/exclude`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reason, memo })
+      body: JSON.stringify({ contractor_id: contractorId, reason, memo, target_month: currentMonth })
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     caseChecked[caseId] = false;
@@ -385,9 +396,14 @@ function renderResult(data) {
   const sec = document.getElementById('result-section');
   const list = document.getElementById('result-list');
   const results = Array.isArray(data) ? data : (data.results || []);
-  list.innerHTML = results.map(r =>
-    `<div class="result-item"><span class="${r.success ? 'ok' : 'ng'}">${r.success ? '✓' : '✗'}</span><span>${escHtml(r.contractor_name || r.contractor_id)}</span>${r.message ? `<span style="color:#64748b">${escHtml(r.message)}</span>` : ''}</div>`
-  ).join('') || '<div class="result-item">結果なし</div>';
+  list.innerHTML = results.map(r => {
+    const ok = r.status === 'success';
+    const name = escHtml(r.name || r.contractor_id);
+    const detail = r.pdf_url
+      ? `<a href="${r.pdf_url}" target="_blank" style="color:#2563eb;font-size:12px">PDFを開く</a>`
+      : (r.error_msg ? `<span style="color:#dc2626;font-size:12px">${escHtml(r.error_msg)}</span>` : '');
+    return `<div class="result-item"><span class="${ok ? 'ok' : 'ng'}">${ok ? '✓' : '✗'}</span><span>${name}</span>${detail}</div>`;
+  }).join('') || '<div class="result-item">結果なし</div>';
   sec.style.display = 'block';
 }
 

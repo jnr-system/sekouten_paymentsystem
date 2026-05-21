@@ -12,11 +12,21 @@ import requests
 logger = logging.getLogger(__name__)
 
 
+_SMTP_CONFIGURED = bool(os.environ.get("SMTP_USER") and os.environ.get("SMTP_USER") != "送信元メールアドレス")
+_LINE_CONFIGURED = bool(os.environ.get("LINE_CHANNEL_ACCESS_TOKEN") and os.environ.get("LINE_CHANNEL_ACCESS_TOKEN") != "LINEのチャネルアクセストークン")
+
+
 def send_notice(contractor: dict, pdf_path: str, month: str) -> bool:
     method = contractor.get("send_method", "manual")
     if method == "email":
+        if not _SMTP_CONFIGURED:
+            logger.info("【ダミー】メール送信スキップ: contractor_id=%s email=%s", contractor.get("contractor_id"), contractor.get("email"))
+            return True
         return _send_email(contractor, pdf_path, month)
     elif method == "line":
+        if not _LINE_CONFIGURED:
+            logger.info("【ダミー】LINE送信スキップ: contractor_id=%s", contractor.get("contractor_id"))
+            return True
         return _send_line(contractor, pdf_path, month)
     elif method == "fax":
         logger.warning("FAX送付は手動対応が必要: contractor_id=%s", contractor.get("contractor_id"))
