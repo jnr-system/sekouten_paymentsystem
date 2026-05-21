@@ -4,8 +4,11 @@ load_dotenv()
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from io import BytesIO
+
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from pydantic import BaseModel
 from typing import List
 from sync.rakuraku_client import get_contracts_by_month
@@ -15,6 +18,9 @@ from api.services.sender import send_notice
 
 router = APIRouter()
 
+# メモリ上のPDFキャッシュ: {notice_id: bytes}
+_pdf_cache: dict[str, bytes] = {}
+
 
 class GenerateBody(BaseModel):
     month: str
@@ -22,66 +28,50 @@ class GenerateBody(BaseModel):
     excluded_case_ids: List[str] = []
 
 
+def _generate_one(contractor_id, all_contracts, excluded_set, month):
+    contractor = get_contractor(contractor_id)
+    if not contractor:
+        return {"contractor_id": contractor_id, "name": "", "status": "error",
+                "pdf_url": None, "error_msg": "施工店が見つかりません"}
+
+    cases = [c for c in all_contracts
+             if c["contractor_id"] == contractor_id and c["case_id"] not in excluded_set]
+
+    try:
+        pdf_bytes = generate_notice_pdf(contractor, cases, month)
+        send_notice(contractor, BytesIO(pdf_bytes), month)
+        notice_id = f"{month}_{contractor_id}"
+        _pdf_cache[notice_id] = pdf_bytes
+        return {"contractor_id": contractor_id, "name": contractor["name"],
+                "status": "success", "pdf_url": f"/api/notices/{notice_id}/pdf", "error_msg": None}
+    except Exception as e:
+        return {"contractor_id": contractor_id, "name": contractor["name"],
+                "status": "error", "pdf_url": None, "error_msg": str(e)}
+
+
 @router.post("/api/notices/generate")
 def generate_notices(body: GenerateBody):
     all_contracts = get_contracts_by_month(body.month)
     excluded_set = set(body.excluded_case_ids)
 
-    results = []
-    for contractor_id in body.contractor_ids:
-        contractor = get_contractor(contractor_id)
-        if not contractor:
-            results.append({
-                "contractor_id": contractor_id,
-                "name": "",
-                "status": "error",
-                "pdf_url": None,
-                "error_msg": "施工店が見つかりません",
-            })
-            continue
+    results_map = {}
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = {
+            executor.submit(_generate_one, cid, all_contracts, excluded_set, body.month): cid
+            for cid in body.contractor_ids
+        }
+        for future in as_completed(futures):
+            cid = futures[future]
+            results_map[cid] = future.result()
 
-        cases = [
-            c for c in all_contracts
-            if c["contractor_id"] == contractor_id and c["case_id"] not in excluded_set
-        ]
-
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        output_dir = os.path.join(base_dir, "output", body.month)
-        os.makedirs(output_dir, exist_ok=True)
-        output_path = os.path.join(output_dir, f"{contractor_id}.pdf")
-
-        try:
-            pdf_path = generate_notice_pdf(contractor, cases, body.month, output_path)
-            send_notice(contractor, pdf_path, body.month)
-            notice_id = f"{body.month}_{contractor_id}"
-            results.append({
-                "contractor_id": contractor_id,
-                "name": contractor["name"],
-                "status": "success",
-                "pdf_url": f"/api/notices/{notice_id}/pdf",
-                "error_msg": None,
-            })
-        except Exception as e:
-            results.append({
-                "contractor_id": contractor_id,
-                "name": contractor["name"],
-                "status": "error",
-                "pdf_url": None,
-                "error_msg": str(e),
-            })
-
-    return {"results": results}
+    return {"results": [results_map[cid] for cid in body.contractor_ids]}
 
 
 @router.get("/api/notices/{notice_id}/pdf")
 def get_notice_pdf(notice_id: str):
-    # notice_id format: {month}_{contractor_id}
-    parts = notice_id.split("_", 1)
-    if len(parts) != 2:
-        raise HTTPException(status_code=400, detail="不正なnotice_id形式")
-    month, contractor_id = parts
-    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    pdf_path = os.path.join(base_dir, "output", month, f"{contractor_id}.pdf")
-    if not os.path.exists(pdf_path):
-        raise HTTPException(status_code=404, detail="PDFが見つかりません")
-    return FileResponse(pdf_path, media_type="application/pdf", filename=f"{contractor_id}.pdf")
+    pdf_bytes = _pdf_cache.get(notice_id)
+    if not pdf_bytes:
+        raise HTTPException(status_code=404, detail="PDFが見つかりません。再度発行してください。")
+    contractor_id = notice_id.split("_", 1)[-1]
+    return Response(content=pdf_bytes, media_type="application/pdf",
+                    headers={"Content-Disposition": f"inline; filename={contractor_id}.pdf"})

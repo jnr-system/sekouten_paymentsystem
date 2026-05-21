@@ -255,7 +255,10 @@ function renderCases(contractorId) {
     inner.textContent = '案件なし';
     return;
   }
-    const sortedCases = [...cases].sort((a, b) => (a.construction_date || '').localeCompare(b.construction_date || ''));
+    const sortedCases = [...cases].sort((a, b) => {
+      const d = (a.construction_date || '').localeCompare(b.construction_date || '');
+      return d !== 0 ? d : (a.arrangement_number || '').localeCompare(b.arrangement_number || '');
+    });
   let html = '<table class="detail-table"><thead><tr><th style="width:40px"></th><th style="width:140px;text-align:center">手配番号</th><th>工事内容</th><th style="width:120px;text-align:center">施工日</th><th style="width:130px;text-align:right">施工費（税込）</th></tr></thead><tbody>';
   sortedCases.forEach(c => {
     const chk = caseChecked[c.case_id];
@@ -263,7 +266,7 @@ function renderCases(contractorId) {
     html += `<tr class="${excluded ? 'excluded-row' : ''}" id="case-row-${c.case_id}">
       <td><input type="checkbox" ${chk ? 'checked' : ''} onchange="toggleCase('${contractorId}','${c.case_id}',this)"></td>
       <td style="color:#475569;text-align:left">${escHtml(c.arrangement_number || '')}</td>
-      <td>${escHtml((c.case_name_recipient ? c.case_name_recipient + ' 様　' : '') + c.case_name.replace(/^・/, '').split('\t')[0] + 'の交換工事')}${c.carried_over ? '<span class="badge">⚠ 持ち越し</span>' : ''}</td>
+      <td>${escHtml((c.case_name_recipient || '') + ' 様')}${c.carried_over ? '<span class="badge">⚠ 持ち越し</span>' : ''}</td>
       <td style="color:#475569;text-align:center">${c.construction_date || ''}</td>
       <td class="amount">${fmt(c.amount_with_tax)}</td>
     </tr>`;
