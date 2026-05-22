@@ -123,7 +123,7 @@ def generate_notice_pdf(contractor: dict, cases: list, month: str, output_path: 
     address_html = escape(contractor.get("address", "") or "")
     invoice_html = (
         f"<br>インボイス登録番号: {escape(invoice_number)}"
-        if invoice_number else ""
+        if invoice_number else "<br>免税事業者"
     )
 
     bank_name      = contractor.get("bank_name", "") or ""
@@ -137,7 +137,7 @@ def generate_notice_pdf(contractor: dict, cases: list, month: str, output_path: 
         <div class="bank-box">
           <div class="bank-title">振込先口座</div>
           <div class="bank-body">
-            {escape(bank_name)}銀行　{escape(branch_name)}支店<br>
+            {escape(bank_name)}　{escape(branch_name)}<br>
             {escape(account_type)}　{escape(account_num)}<br>
             口座名義：{escape(account_holder)}
           </div>

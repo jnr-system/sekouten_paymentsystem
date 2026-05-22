@@ -11,6 +11,22 @@ import db
 import sheets_client
 import rakuraku_client
 
+# カラムインデックス（0始まり）
+# A=施工店ID, B=取引先コード, C=取引先名, D=インボイス登録番号,
+# E=郵便番号, F=住所１, G=金融機関, H=支店名, I=口座種別, J=口座番号, K=口座名義
+_COL_ID       = 0
+_COL_CODE     = 1
+_COL_NAME     = 2
+_COL_INVOICE  = 3
+_COL_POSTAL   = 4
+_COL_ADDRESS  = 5
+_COL_BANK     = 6
+_COL_BRANCH   = 7
+_COL_ACCT_TYPE = 8
+_COL_ACCT_NUM  = 9
+_COL_ACCT_NAME = 10
+_MASTER_COLS   = 11
+
 # ログ設定
 LOG_DIR = os.path.join(os.path.dirname(__file__), "..", "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -38,39 +54,40 @@ def _pad(row: list, length: int) -> list:
     return row + [""] * (length - len(row))
 
 
-def sync_basic_rows() -> int:
-    rows = sheets_client.get_basic_rows()
+def sync_master_rows() -> int:
+    """マスタシート1枚から施工店基本情報・インボイス・口座情報をまとめてUpsertする。"""
+    rows = sheets_client.get_master_rows()
     upserted = 0
     for raw in rows:
-        row = _pad(raw, 8)
-        # A=施工店ID, B=施工店名, C=取引状況, D=代表者名, E=電話①, F=郵便番号, G=住所, H=インボイス番号
-        contractor_id = row[0].strip()
+        row = _pad(raw, _MASTER_COLS)
+        contractor_id = row[_COL_ID].strip()
         if not contractor_id:
             continue
-        status = row[2].strip()
-        if status != "継続中":
+        if not row[_COL_NAME].strip():
             continue
+
         new_hash = compute_row_hash(row)
         existing = db.get_contractor(contractor_id)
         if existing.get("row_hash") == new_hash:
             continue
+
         db.upsert_contractor_basic({
             "contractor_id": contractor_id,
-            "name":          row[1],
-            "status":        row[2] or "継続中",
-            "phone":         row[4],
-            "postal_code":   row[5],
-            "address":       row[6],
+            "name":          row[_COL_NAME].strip(),
+            "status":        "継続中",
+            "postal_code":   row[_COL_POSTAL].strip(),
+            "address":       row[_COL_ADDRESS].strip(),
+            "phone":         "",
             "fax":           "",
-            "email":         "",
+            "email":         existing.get("email", ""),
             "line_user_id":  existing.get("line_user_id"),
             "send_method":   existing.get("send_method", "email"),
             "rakuraku_id":   existing.get("rakuraku_id"),
             "row_hash":      new_hash,
             "synced_at":     None,
         })
-        # インボイス番号も同じ行から取得してinvoiceテーブルへ
-        invoice_number = row[7].strip()
+
+        invoice_number = row[_COL_INVOICE].strip()
         if invoice_number:
             db.upsert_contractor_invoice({
                 "contractor_id":   contractor_id,
@@ -79,35 +96,20 @@ def sync_basic_rows() -> int:
                 "row_hash":        new_hash,
                 "synced_at":       None,
             })
-        upserted += 1
-    return upserted
 
+        bank_name = row[_COL_BANK].strip()
+        if bank_name:
+            db.upsert_contractor_bank({
+                "contractor_id":  contractor_id,
+                "bank_name":      bank_name,
+                "branch_name":    row[_COL_BRANCH].strip(),
+                "account_type":   row[_COL_ACCT_TYPE].strip(),
+                "account_number": row[_COL_ACCT_NUM].strip(),
+                "account_holder": row[_COL_ACCT_NAME].strip(),
+                "row_hash":       new_hash,
+                "synced_at":      None,
+            })
 
-def sync_bank_rows() -> int:
-    rows = sheets_client.get_bank_rows()
-    upserted = 0
-    for raw in rows:
-        row = _pad(raw, 8)
-        # A=施工店ID, B=奉行コード, C=銀行名, D=支店名, E=預金種別, F=口座番号, G=施工店名, H=口座名
-        contractor_id = row[0].strip()
-        if not contractor_id:
-            continue
-        if not row[2].strip():
-            continue
-        new_hash = compute_row_hash(row)
-        existing = db.get_contractor(contractor_id)
-        if existing.get("row_hash") == new_hash:
-            continue
-        db.upsert_contractor_bank({
-            "contractor_id":  contractor_id,
-            "bank_name":      row[2],
-            "branch_name":    row[3],
-            "account_type":   row[4],
-            "account_number": row[5],
-            "account_holder": row[7],
-            "row_hash":       new_hash,
-            "synced_at":      None,
-        })
         upserted += 1
     return upserted
 
@@ -152,16 +154,10 @@ def main() -> None:
 
     # 1. Google Sheetsから取得してSQLiteへ差分Upsert
     try:
-        b = sync_basic_rows()
-        logger.info(f"基本情報（インボイス含む） upsert: {b} 件")
+        n = sync_master_rows()
+        logger.info(f"マスタシート upsert: {n} 件")
     except Exception as e:
-        logger.error(f"基本情報シート取得失敗: {e}")
-
-    try:
-        k = sync_bank_rows()
-        logger.info(f"口座情報 upsert: {k} 件")
-    except Exception as e:
-        logger.error(f"口座情報シート取得失敗: {e}")
+        logger.error(f"マスタシート取得失敗: {e}")
 
     # 2. 未同期レコードを楽楽販売APIへ反映
     ok, ng = sync_to_rakuraku()
