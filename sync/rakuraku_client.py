@@ -39,15 +39,16 @@ def get_contracts_by_month(month: str) -> list[dict]:
 
     contracts = []
     for row in rows:
-        if len(row) < 7:
+        if len(row) < 8:
             continue
-        case_id           = row[0].strip()
+        case_id             = row[0].strip()
         arrangement_number  = row[1].strip()
-        contractor_name     = row[2].strip()
-        case_name           = row[3].strip()
-        construction_date   = row[4].strip()
-        recipient_name      = row[5].strip() if len(row) > 5 else ""
-        amount_with_tax     = int(row[6].strip().replace(",", "") or 0)
+        contractor_id       = row[2].strip()
+        contractor_name     = row[3].strip()
+        case_name           = row[4].strip()
+        construction_date   = row[5].strip()
+        recipient_name      = row[6].strip() if len(row) > 6 else ""
+        amount_with_tax     = int(row[7].strip().replace(",", "") or 0)
 
         if not construction_date.startswith(prefix):
             continue
@@ -56,13 +57,10 @@ def get_contracts_by_month(month: str) -> list[dict]:
         amount = int(amount_with_tax / 1.1)
         tax    = amount_with_tax - amount
 
-        # 施工店名からcontractor_idを解決
-        from db import get_contractor_by_name
-        cid = get_contractor_by_name(contractor_name).get("contractor_id", "")
-
         contracts.append({
             "case_id":              case_id,
             "arrangement_number":   arrangement_number,
+            "contractor_id":        contractor_id,
             "contractor_name":      contractor_name,
             "case_name":            case_name,
             "case_name_recipient":  recipient_name,
@@ -70,7 +68,6 @@ def get_contracts_by_month(month: str) -> list[dict]:
             "amount":               amount,
             "tax":                  tax,
             "amount_with_tax":      amount_with_tax,
-            "contractor_id":        cid,
         })
 
     return contracts
