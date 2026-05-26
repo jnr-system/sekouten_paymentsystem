@@ -17,14 +17,8 @@ INVOICE_NUMBER_RE = re.compile(r"^T\d{13}$")
 COMPANY_NAME    = os.environ.get("COMPANY_NAME", "")
 COMPANY_ADDRESS = os.environ.get("COMPANY_ADDRESS", "")
 
-# モジュールレベルでキャッシュ（起動時1回だけ初期化）
-_font_config = FontConfiguration()
-_css_font = weasyprint.CSS(string="""
-@font-face {
-    font-family: NotoJP;
-    src: url('/usr/local/share/fonts/noto-jp/NotoSansJP.ttf');
-}
-""", font_config=_font_config)
+_FONT_PATH = "file:///usr/local/share/fonts/noto-jp/NotoSansJP.ttf"
+_FONT_CSS  = f"@font-face{{font-family:NotoJP;src:url('{_FONT_PATH}');}}"
 
 
 def _next_month_end(month: str) -> str:
@@ -228,9 +222,11 @@ def generate_notice_pdf(contractor: dict, cases: list, month: str, output_path: 
 </body>
 </html>"""
 
+    font_config = FontConfiguration()
+    css_font = weasyprint.CSS(string=_FONT_CSS, font_config=font_config)
     pdf_bytes = weasyprint.HTML(string=html).write_pdf(
-        font_config=_font_config,
-        stylesheets=[_css_font],
+        font_config=font_config,
+        stylesheets=[css_font],
     )
     logger.info("PDF生成完了: %s", contractor.get("name", ""))
     return pdf_bytes

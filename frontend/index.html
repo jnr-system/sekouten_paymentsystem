@@ -21,6 +21,9 @@ button { cursor: pointer; border: none; border-radius: 4px; padding: 8px 16px; f
 .btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
 .btn-danger { background: #dc2626; color: #fff; }
 .btn-danger:hover { background: #b91c1c; }
+.btn-success { background: #16a34a; color: #fff; font-weight: 600; font-size: 14px; padding: 8px 20px; }
+.btn-success:hover:not(:disabled) { background: #15803d; }
+.btn-success:disabled { background: #86efac; cursor: not-allowed; }
 .btn-sm { padding: 4px 10px; font-size: 12px; }
 #error-msg { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; border-radius: 6px; padding: 10px 14px; margin-bottom: 12px; display: none; }
 table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
@@ -103,7 +106,10 @@ tr.detail-row td { padding: 0; background: #f8fafc !important; }
   </div>
 
   <div id="result-section">
-    <h2>発行結果</h2>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <h2 style="margin-bottom:0">発行結果</h2>
+      <button class="btn-success" id="bulk-download-btn" style="display:none" onclick="bulkDownload()">一括ダウンロード</button>
+    </div>
     <div id="result-list"></div>
   </div>
 </div>
@@ -135,6 +141,7 @@ let contractorChecked = {};
 let caseData = {};
 let caseChecked = {};
 let pendingExclude = null;
+let lastNoticeIds = [];
 
 function fmt(n) {
   return '¥' + Number(n).toLocaleString('ja-JP');
@@ -386,6 +393,8 @@ async function issueNotices() {
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
+    const results = Array.isArray(data) ? data : (data.results || []);
+    lastNoticeIds = results.filter(r => r.status === 'success' && r.notice_id).map(r => r.notice_id);
     renderResult(data);
   } catch (e) {
     showError('発行に失敗しました: ' + e.message);
@@ -407,7 +416,39 @@ function renderResult(data) {
       : (r.error_msg ? `<span style="color:#dc2626;font-size:12px">${escHtml(r.error_msg)}</span>` : '');
     return `<div class="result-item"><span class="${ok ? 'ok' : 'ng'}">${ok ? '✓' : '✗'}</span><span>${name}</span>${detail}</div>`;
   }).join('') || '<div class="result-item">結果なし</div>';
+  const dlBtn = document.getElementById('bulk-download-btn');
+  dlBtn.style.display = lastNoticeIds.length > 0 ? 'inline-block' : 'none';
   sec.style.display = 'block';
+}
+
+async function bulkDownload() {
+  if (lastNoticeIds.length === 0) return;
+  const btn = document.getElementById('bulk-download-btn');
+  btn.disabled = true;
+  btn.textContent = 'ダウンロード中...';
+  try {
+    const res = await fetch(`${API}/api/notices/download`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notice_ids: lastNoticeIds })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    const cd = res.headers.get('Content-Disposition') || '';
+    const match = cd.match(/filename\*=UTF-8''(.+)/);
+    const filename = match ? decodeURIComponent(match[1]) : '施工店依頼書.zip';
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    showError('一括ダウンロードに失敗しました: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '一括ダウンロード';
+  }
 }
 
 function escHtml(s) {
