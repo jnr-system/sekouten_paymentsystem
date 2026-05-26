@@ -88,6 +88,7 @@ thead th {
     background: #1a3a5c; color: #fff; padding: 6px; text-align: center;
     font-weight: bold; font-size: 10pt;
 }
+tbody tr { page-break-inside: avoid; break-inside: avoid; }
 tbody tr:nth-child(even) td { background: #f8fafc; }
 tbody td { padding: 6px; border: 0.5px solid #cbd5e1; vertical-align: middle; }
 .col-no   { width: 8mm;  text-align: center; }
@@ -95,6 +96,7 @@ tbody td { padding: 6px; border: 0.5px solid #cbd5e1; vertical-align: middle; }
 .col-work { width: 68mm; }
 .col-date { width: 24mm; text-align: center; }
 .col-amt  { width: 28mm; text-align: right; }
+.foot-row { page-break-inside: avoid; }
 .foot-row td { border: 0.5px solid #94a3b8; padding: 5px 8px; font-size: 10pt; }
 .foot-row td:first-child { border: none; background: none; }
 .foot-label { text-align: center; background: #e2e8f0; }
